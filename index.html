@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Voyager: Tata Surya Edition</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #020617;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 30px rgba(14, 165, 233, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background: radial-gradient(circle, #0f172a 0%, #020617 100%);
+        }
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .screen {
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.9);
+            border: 2px solid #0ea5e9;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 450px;
+        }
+        h1 { color: #38bdf8; margin-top: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 2px;}
+        p { font-size: 14px; line-height: 1.6; color: #cbd5e1;}
+        button {
+            background: #0284c7;
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-top: 15px;
+            text-transform: uppercase;
+        }
+        button:hover { background: #38bdf8; box-shadow: 0 0 15px #38bdf8; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <div class="ui-layer">
+            <div id="start-screen" class="screen">
+                <h1>Cosmic Voyager</h1>
+                <h2>Edisi Tata Surya SMPN 7 Mengwi</h2>
+                <p>Selamat datang, Taruna Antariksa! Kendalikan pesawatmu untuk menangkap planet yang sesuai dengan petunjuk fisis di layar.</p>
+                <p><strong>Kontrol:</strong> Geser <strong>MOUSE</strong> kanan/kiri untuk bergerak.</p>
+                <button onclick="startGame()">Mulai Misi</button>
+            </div>
+
+            <div id="end-screen" class="screen hidden">
+                <h1 id="end-title">Misi Selesai</h1>
+                <p id="end-desc"></p>
+                <h2 id="end-score" style="color: #f59e0b;">Skor: 0</h2>
+                <button onclick="restartGame()">Main Lagi</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // State Game
+        let isPlaying = false;
+        let score = 0;
+        let shield = 100;
+        let currentMissionIndex = 0;
+        let stars = [];
+        let fallingObjects = [];
+        let spawnTimer = 0;
+
+        // Data Misi / Pertanyaan HOTS
+        const missions = [
+            { clue: "MISI 1: Cari planet terpanas akibat Efek Rumah Kaca Ekstrem!", correct: "Venus", options: ["Merkurius", "Venus", "Mars"] },
+            { clue: "MISI 2: Cari planet dengan revolusi terlama (Hukum Kepler)!", correct: "Neptunus", options: ["Uranus", "Jupiter", "Neptunus"] },
+            { clue: "MISI 3: Cari planet dengan gravitasi 3.7 m/s² & target koloni masa depan!", correct: "Mars", options: ["Bumi", "Mars", "Merkurius"] },
+            { clue: "MISI 4: Wilayah batuan gagal menyatu akibat gravitasi raksasa Jupiter!", correct: "Sabuk Asteroid", options: ["Ceres", "Sabuk Asteroid", "Saturnus"] },
+            { clue: "MISI 5: Benda langit yang kehilangan status planet utama di tahun 2006!", correct: "Pluto", options: ["Pluto", "Eris", "Neptunus"] }
+        ];
+
+        // Objek Pemain (Pesawat)
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 70,
+            width: 60,
+            height: 40,
+            color: '#0ea5e9'
+        };
+
+        // Tracker Gerakan Mouse
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            // Menjaga agar pesawat tidak keluar batas canvas
+            player.x = e.clientX - rect.left - player.width / 2;
+            if(player.x < 0) player.x = 0;
+            if(player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+        });
+
+        // Inisialisasi Partikel Bintang Latar Belakang
+        for (let i = 0; i < 80; i++) {
+            stars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2 + 1,
+                speed: Math.random() * 3 + 1
+            });
+        }
+
+        function startGame() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('end-screen').classList.add('hidden');
+            score = 0;
+            shield = 100;
+            currentMissionIndex = 0;
+            fallingObjects = [];
+            isPlaying = true;
+            generateOptions();
+        }
+
+        function restartGame() {
+            startGame();
+        }
+
+        // Memunculkan opsi jawaban sebagai planet jatuh
+        function generateOptions() {
+            fallingObjects = [];
+            if (currentMissionIndex >= missions.length) {
+                endGame(true);
+                return;
+            }
+            
+            const currentMission = missions[currentMissionIndex];
+            const laneWidth = canvas.width / currentMission.options.length;
+
+            currentMission.options.forEach((option, index) => {
+                // Mengacak posisi X agar variatif namun tetap pada lajurnya
+                let xPos = (index * laneWidth) + (laneWidth / 2);
+                fallingObjects.push({
+                    x: xPos,
+                    y: -50,
+                    name: option,
+                    radius: 35,
+                    speed: 2 + Math.random() * 1,
+                    // Penentuan warna visual planet fiktif/prosedural
+                    color: option === "Venus" ? "#eab308" : 
+                           option === "Mars" ? "#ef4444" : 
+                           option === "Neptunus" ? "#3b82f6" : 
+                           option === "Merkurius" ? "#94a3b8" : 
+                           option === "Sabuk Asteroid" ? "#78350f" : "#a855f7"
+                });
+            });
+        }
+
+        function endGame(isVictory) {
+            isPlaying = false;
+            document.getElementById('end-screen').classList.remove('hidden');
+            document.getElementById('end-score').innerText = "Skor Akhir: " + score;
+            
+            if (isVictory) {
+                document.getElementById('end-title').innerText = "Misi Berhasil!";
+                document.getElementById('end-title').style.color = "#10b981";
+                document.getElementById('end-desc').innerText = "Luar biasa! Kamu berhasil menavigasi tata surya dengan pengetahuan fisis yang akurat. Guru IPA SMPN 7 Mengwi bangga padamu!";
+            } else {
+                document.getElementById('document.getElementById');
+                document.getElementById('end-title').innerText = "Misi Gagal!";
+                document.getElementById('end-title').style.color = "#ef4444";
+                document.getElementById('end-desc').innerText = "Pesawatmu hancur akibat miskonsepsi data astronomi atau menabrak rintangan luar angkasa. Pelajari lagi modul ajarmu!";
+            }
+        }
+
+        // Loop Utama Game (60 FPS)
+        function update() {
+            // 1. Bersihkan layar
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Gambar & Update Bintang (Latar Belakang Bergerak)
+            ctx.fillStyle = '#ffffff';
+            stars.forEach(star => {
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+                if (isPlaying) star.y += star.speed;
+                if (star.y > canvas.height) star.y = 0;
+            });
+
+            if (isPlaying) {
+                // 3. Tampilkan Teks Misi / Soal HOTS
+                ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+                ctx.fillRect(10, 10, canvas.width - 20, 60);
+                ctx.strokeStyle = "#0ea5e9";
+                ctx.strokeRect(10, 10, canvas.width - 20, 60);
+
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 16px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(missions[currentMissionIndex].clue, canvas.width / 2, 45);
+
+                // 4. Tampilkan HUD (Skor & Shield)
+                ctx.textAlign = "left";
+                ctx.fillStyle = "#f59e0b";
+                ctx.font = "14px Arial";
+                ctx.fillText("SKOR: " + score, 20, 100);
+
+                ctx.fillStyle = "#ef4444";
+                ctx.fillText("SHIELD: " + shield + "%", canvas.width - 130, 100);
+
+                // 5. Update dan Gambar Planet/Opsi yang Jatuh
+                fallingObjects.forEach((obj, index) => {
+                    obj.y += obj.speed;
+
+                    // Efek visual lingkaran planet bersinar
+                    let gradient = ctx.createRadialGradient(obj.x, obj.y, 5, obj.x, obj.y, obj.radius);
+                    gradient.addColorStop(0, '#ffffff');
+                    gradient.addColorStop(0.3, obj.color);
+                    gradient.addColorStop(1, 'transparent');
+
+                    ctx.beginPath();
+                    ctx.arc(obj.x, obj.y, obj.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+
+                    // Label nama planet dibawah objek
+                    ctx.fillStyle = "#ffffff";
+                    ctx.font = "bold 12px Arial";
+                    ctx.textAlign = "center";
+                    ctx.fillText(obj.name, obj.x, obj.y + 5);
+
+                    // Deteksi Tabrakan (AABB / Lingkaran ke Kotak disederhanakan)
+                    if (obj.y + obj.radius >= player.y && obj.y - obj.radius <= player.y + player.height &&
+                        obj.x + obj.radius >= player.x && obj.x - obj.radius <= player.x + player.width) {
+                        
+                        // Cek JawabanBenar/Salah
+                        if (obj.name === missions[currentMissionIndex].correct) {
+                            score += 20;
+                            currentMissionIndex++;
+                            generateOptions();
+                        } else {
+                            shield -= 25;
+                            // Reset posisi objek yang salah agar jatuh lagi
+                            obj.y = -50; 
+                            if (shield <= 0) {
+                                endGame(false);
+                            }
+                        }
+                    }
+
+                    // Jika objek lolos ke bawah tanpa ditabrak
+                    if (obj.y > canvas.height + 50) {
+                        // Jika yang lolos adalah jawaban benar, paksa generate ulang supaya tidak softlock
+                        if(obj.name === missions[currentMissionIndex].correct) {
+                            generateOptions();
+                        } else {
+                            obj.y = -50;
+                        }
+                    }
+                });
+
+                // 6. Gambar Pesawat Pemain (Gaya Sci-Fi Minimalis)
+                ctx.fillStyle = player.color;
+                ctx.beginPath();
+                ctx.moveTo(player.x + player.width / 2, player.y); // Hidung pesawat
+                ctx.lineTo(player.x + player.width, player.y + player.height); // Sayap kanan
+                ctx.lineTo(player.x, player.y + player.height); // Sayap kiri
+                ctx.closePath();
+                ctx.fill();
+
+                // Efek api jet pendorong
+                ctx.fillStyle = '#f97316';
+                ctx.fillRect(player.x + player.width / 2 - 5, player.y + player.height, 10, Math.random() * 15 + 5);
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        // Jalankan loop pertama kali
+        update();
+    </script>
+</body>
+</html>
